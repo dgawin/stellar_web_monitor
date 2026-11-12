@@ -12,11 +12,12 @@ Passive, mobil nutzbare WLAN-Übersicht für **Alcatel-Lucent OmniAccess Stellar
 
 ## Funktionen
 
-- **Access Points** als Liste (ausgelegt für 32 APs): Status, IP, Modell, Rolle (PVC/SVC/VC), Anzahl Clients, Durchsatz
-- **Letzte erfolgreiche Anmeldung je AP** mit Gerätename und IP
-- **Clients je AP** zum Aufklappen: Name, IP, SSID, Band, Signal, **übertragene Datenmenge** und Durchsatz
+- **Access Points** als kompakte Liste: Status, IP, Modell, Rolle (PVC/SVC/VC), Anzahl Clients, Durchsatz
+- **Letzte erfolgreiche Anmeldung je AP** mit Gerätetyp und IP
+- **Clients je AP** zum Aufklappen: Gerätetyp, IP, SSID, Band, Signal, **übertragene Datenmenge** und Durchsatz
 - **Client-Übersicht** über alle APs, auf dem Handy als Karten
 - **Verlauf**: Anmeldungen, AP-Wechsel (Roaming) und Abmeldungen, filterbar nach AP
+- **Datenschutzmodus** (Standard): keine MAC-Adressen, keine Gerätenamen, gekürzte IPs, siehe [Datenschutz](#datenschutz)
 - Hell-/Dunkelmodus, automatische Aktualisierung, optionaler Passwortschutz
 - **Nur lesend**: Es werden ausschließlich lesende API-Methoden verwendet, am Cluster wird nichts geändert.
 
@@ -43,7 +44,7 @@ git clone https://github.com/dgawin/stellar_web_monitor.git
 cd stellar_web_monitor
 cp .env.example .env          # CLUSTER_IP und CLUSTER_PASSWORD eintragen
 docker compose up -d --build
-docker compose logs -f poller # erwartet: "OK – 32 APs, xx Clients"
+docker compose logs -f poller # erwartet: "OK – xx APs, yy Clients"
 ```
 
 Die Webseite läuft dann unter `http://<docker-host>:8088`.
@@ -76,7 +77,9 @@ Die Daten liegen im Named Volume `stellar_data` und bleiben bei Updates erhalten
 | `RESOLVE_PVC` | `1` | aktuellen PVC per `system.getPvc` ermitteln (folgt PVC-Wechseln) |
 | `POLL_INTERVAL` | `60` | Sekunden zwischen zwei Abfragen (min. 15) |
 | `SYSINFO_EVERY` | `10` | Modell/Firmware/Laufzeit nur jeden n-ten Durchlauf abfragen |
-| `RETENTION_DAYS` | `90` | Aufbewahrung des Verlaufs |
+| `PRIVACY_MODE` | `1` | Datenschutzmodus, siehe [Datenschutz](#datenschutz). `0` = MAC-Adressen und Gerätenamen werden gespeichert |
+| `PRIVACY_IP` | `mask` | nur im Datenschutzmodus: `mask` = `192.168.20.x` · `full` = volle IP · `off` = keine IP |
+| `RETENTION_DAYS` | `7` / `90` | Aufbewahrung des Verlaufs in Tagen (7 im Datenschutzmodus, sonst 90) |
 | `LOGIN_BACKOFF_MAX` | `30` | max. Wartezeit (Min.) nach Login-Fehlern, schützt vor Account-Sperre |
 | `WEB_PORT` | `8088` | Port der Webseite |
 | `SITE_TITLE` | `WLAN-Übersicht` | Seitentitel |
@@ -85,25 +88,32 @@ Die Daten liegen im Named Volume `stellar_data` und bleiben bei Updates erhalten
 | `DEBUG_PASSWORD` | leer | aktiviert `/debug.php` (Benutzer `debug`), danach wieder leeren |
 | `TZ` | `Europe/Berlin` | Zeitzone |
 
-## Lokal testen ohne Cluster
+## Datenschutz
 
-`mock/cluster.php` simuliert ein Cluster mit 32 APs (3 davon down) und rund 60 wechselnden Clients im Antwortformat der API. Login: `Administrator` / `admin`.
+Für die Frage „laufen die APs und können sich Geräte anmelden?“ braucht es keine Identität der Geräte. Deshalb ist der **Datenschutzmodus standardmäßig aktiv** (`PRIVACY_MODE=1`, Privacy by Default nach Art. 25 DSGVO):
 
-```bash
-php -S 127.0.0.1:18080 mock/cluster.php &
-export CLUSTER_IP=127.0.0.1 CLUSTER_PORT=18080 CLUSTER_PASSWORD=admin DB_PATH=./data/monitor.sqlite
-php app/poller.php --once
-php -S 127.0.0.1:18088 -t app/public
-```
+| Datum | Datenschutzmodus | ohne (`PRIVACY_MODE=0`) |
+|---|---|---|
+| MAC-Adresse | **nicht gespeichert**, stattdessen ein Pseudonym (siehe unten) | gespeichert |
+| Gerätename (Hostname) | **nicht gespeichert** | gespeichert |
+| Gerätetyp (iOS, Android, Windows …) | gespeichert | gespeichert |
+| IP-Adresse | gekürzt (`192.168.20.x`), zeigt weiter, dass DHCP funktioniert | vollständig |
+| SSID, Band, Signal, Datenmenge, Verbindungsdauer | gespeichert | gespeichert |
+| Rohdaten der Clients | nicht gespeichert, Diagnose-Dateien geschwärzt | gespeichert |
+| Verlauf | 7 Tage | 90 Tage |
 
-Benötigt PHP 8.3 mit `pdo_sqlite` und `curl`.
+**Pseudonym statt Hash:** Ein einfacher Hash der MAC-Adresse wäre kein Schutz, denn MAC-Adressen lassen sich in Sekunden durchprobieren. Der Poller bildet deshalb ein HMAC-SHA256 mit einem zufälligen Schlüssel, der **nur im Arbeitsspeicher** liegt, nie in Datenbank oder Datei, und **jeden Tag neu** erzeugt wird. Aus der Datenbank lässt sich so keine MAC zurückrechnen, und Geräte lassen sich nicht über mehrere Tage verfolgen.
+
+**Folgen:** Nach einem Neustart des Pollers werden die aktuell verbundenen Geräte neu erfasst, Anmeldungen während der Neustartphase fehlen im Verlauf. Wird der Modus eingeschaltet, löscht der Poller vorhandene Client-Daten und den Verlauf.
+
+Die Verantwortung für den datenschutzkonformen Einsatz liegt beim Betreiber, etwa für Zugriffsschutz, Aufbewahrungsdauer und die Information der Nutzer. Auch Pseudonyme und gekürzte IPs können im Einzelfall personenbezogen sein.
 
 ## Sicherheit
 
-- Der API-Account ist der **Administrator** des Clusters. `.env` niemals committen (steht in `.gitignore`).
+- Die API verlangt den **Administrator**-Account des Clusters. Zugangsdaten nur als Umgebungsvariablen im Stack hinterlegen.
 - Die API spricht standardmäßig HTTP. Den Docker-Host möglichst im Management-Netz betreiben.
 - Basic-Auth überträgt Passwörter ohne TLS im Klartext. Für Zugriff von außen einen Reverse-Proxy mit HTTPS davorschalten.
-- Client-Daten (Gerätenamen, MAC-, IP-Adressen, Verbindungszeiten) sind personenbezogene Daten. Betreiber sind für den DSGVO-konformen Einsatz verantwortlich, etwa für Zugriffsschutz, Aufbewahrungsdauer (`RETENTION_DAYS`) und Information der Nutzer.
+- `/debug.php` zeigt Live-Antworten des Clusters (im Datenschutzmodus geschwärzt). Nur bei Bedarf über `DEBUG_PASSWORD` einschalten.
 
 ## Grenzen
 
@@ -111,8 +121,6 @@ Benötigt PHP 8.3 mit `pdo_sqlite` und `curl`.
 - Der Durchsatz ist ein Mittelwert aus den Byte-Zählern zwischen zwei Abfragen.
 - Feldnamen folgen dem *AP Northbound API User Guide*. Andere Firmware-Stände können abweichen. Unter `/debug.php` sind Rohdaten und erkannte Felder einsehbar.
 - Der Signalwert aus `ap.getClient` ist positiv (vermutlich dB über Rauschen) und wird als „Signal xx dB“ angezeigt.
-
-Ausführliche technische Beschreibung: [DOKUMENTATION.md](DOKUMENTATION.md)
 
 ---
 

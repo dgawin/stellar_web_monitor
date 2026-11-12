@@ -10,28 +10,39 @@ declare(strict_types=1);
 require __DIR__ . '/lib/bootstrap.php';
 
 $interval  = max(15, (int)cfg('POLL_INTERVAL', 60));
-$retention = (int)cfg('RETENTION_DAYS', 90);
+$retention = (int)cfg('RETENTION_DAYS', privacy_on() ? 7 : 90);
 $sysEvery  = max(1, (int)cfg('SYSINFO_EVERY', 10));   // ap.getSystemInfo nur jeden n-ten Zyklus
 $rawDir    = dirname(cfg('DB_PATH', __DIR__ . '/../data/monitor.sqlite')) . '/raw';
 @mkdir($rawDir, 0775, true);
 
-$once  = in_array('--once', $argv, true);
-$api   = api();
-$cycle = 0;
+$once   = in_array('--once', $argv, true);
+$api    = api();
+$cycle  = 0;
+$pseudo = new Pseudonymizer();
 
 function logmsg(string $m): void { fwrite(STDOUT, '[' . date('Y-m-d H:i:s') . "] $m\n"); }
 function dump_raw(string $dir, string $name, $data): void {
     @file_put_contents("$dir/" . preg_replace('/[^\w.-]/', '_', $name) . '.json', json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 }
 
-logmsg("Poller gestartet – Cluster " . cfg('CLUSTER_IP') . ", Intervall {$interval}s");
+logmsg("Poller gestartet – Cluster " . cfg('CLUSTER_IP') . ", Intervall {$interval}s, Datenschutzmodus " . (privacy_on() ? 'AN' : 'AUS'));
+
+// Wechsel in den Datenschutzmodus: vorhandene personenbezogene Daten entfernen
+if (privacy_on() && meta_get('privacy_mode') !== '1') {
+    db()->exec('DELETE FROM clients; DELETE FROM assoc_log;');
+    foreach (glob("$rawDir/ap.getClient_*.json") ?: [] as $f) @unlink($f);
+    db()->exec('VACUUM');
+    db()->exec('PRAGMA wal_checkpoint(TRUNCATE)');   // alte Seiten auch aus dem WAL-Journal entfernen
+    logmsg('Datenschutzmodus aktiviert – gespeicherte Client-Daten und Verlauf gelöscht');
+}
+meta_set('privacy_mode', privacy_on() ? '1' : '0');
 
 $loginFails = 0;
 do {
     $t0 = microtime(true);
     $wait = $interval;
     try {
-        poll($api, $cycle % $sysEvery === 0, $rawDir);
+        poll($api, $cycle % $sysEvery === 0, $rawDir, $pseudo);
         meta_set('last_poll', time());
         meta_set('last_error', '');
         meta_set('next_login_try', '');
@@ -57,9 +68,15 @@ do {
     if (!$once) sleep(max(1, $wait - (int)(microtime(true) - $t0)));
 } while (!$once);
 
-function poll(StellarApi $api, bool $withSysInfo, string $rawDir): void {
+function poll(StellarApi $api, bool $withSysInfo, string $rawDir, Pseudonymizer $pseudo): void {
     $db  = db();
     $now = time();
+    $privacy  = privacy_on();
+    $rotated  = $privacy && $pseudo->rotate();
+    // Erster Durchlauf nach dem Start: alte Pseudonyme sind ohne den alten Schlüssel nicht zuordenbar.
+    // Sie werden verworfen und die aktuell verbundenen Clients ohne "connect"-Eintrag neu erfasst.
+    $baseline = $rotated && $pseudo->fresh;
+    if ($baseline) $db->exec('DELETE FROM clients');
 
     /* ---------------- APs */
     $apResult = $api->call('system.getApList');
@@ -110,7 +127,7 @@ ON CONFLICT(mac) DO UPDATE SET
   rx_bytes=excluded.rx_bytes, tx_rate=excluded.tx_rate, rx_rate=excluded.rx_rate, link_tx=excluded.link_tx,
   link_rx=excluded.link_rx, ostype=COALESCE(excluded.ostype,ostype), connected=1, assoc_since=excluded.assoc_since, last_seen=excluded.last_seen, raw=excluded.raw
 SQL);
-    $log = $db->prepare('INSERT INTO assoc_log(ts,event,client_mac,ap_mac,prev_ap_mac,ip,hostname,ssid) VALUES(?,?,?,?,?,?,?,?)');
+    $log = $db->prepare('INSERT INTO assoc_log(ts,event,client_mac,ap_mac,prev_ap_mac,ip,hostname,ssid,ostype) VALUES(?,?,?,?,?,?,?,?,?)');
 
     $db->beginTransaction();
     foreach ($apsToQuery as $apMac => $info) {
@@ -118,7 +135,7 @@ SQL);
         if ($info['online']) {
             try {
                 $res = $api->call('ap.getClient', ['apmac' => $info['raw_mac']]);
-                dump_raw($rawDir, "ap.getClient_$apMac", $res);
+                dump_raw($rawDir, "ap.getClient_$apMac", $privacy ? scrub_pii($res) : $res);
                 $clients = find_list($res);
             } catch (Throwable $e) { logmsg("getClient $apMac: " . $e->getMessage()); }
         }
@@ -127,14 +144,28 @@ SQL);
             $f = flat($c);
             $live = pick($f, K_CL_LIVE);
             if ($live === false || $live === 'false' || $live === 0 || $live === '0') continue; // vom AP als nicht mehr online gemeldet
-            $mac = norm_mac((string)pick($f, K_CL_MAC, ''));
-            if ($mac === '' || isset($seenClients[$mac])) continue;
+            $realMac = norm_mac((string)pick($f, K_CL_MAC, ''));
+            if ($realMac === '') continue;
+            if ($privacy) {
+                $mac = $pseudo->id($realMac);
+                // Tageswechsel: Datensatz vom alten auf das neue Pseudonym umschlüsseln (MAC ist nur hier im Speicher bekannt)
+                if ($rotated && !$baseline && ($old = $pseudo->oldId($realMac)) !== null && isset($prev[$old]) && !isset($prev[$mac])) {
+                    $prev[$mac] = $prev[$old]; unset($prev[$old]);
+                    $db->prepare('UPDATE clients SET mac=? WHERE mac=?')->execute([$mac, $old]);
+                }
+            } else {
+                $mac = $realMac;
+            }
+            unset($realMac);
+            if (isset($seenClients[$mac])) continue;
             $seenClients[$mac] = true;
             $p = $prev[$mac] ?? null;
 
             $ip   = pick($f, K_CL_IP);
             if ($ip !== null && !filter_var($ip, FILTER_VALIDATE_IP)) $ip = null;
-            $host = pick($f, K_CL_HOST);
+            $ip   = privacy_ip($ip);
+            $host = $privacy ? null : pick($f, K_CL_HOST);
+            $os   = pick($f, K_CL_OS);
             $ssid = pick($f, K_CL_SSID);
             $txb  = to_bytes(pick($f, K_CL_TXB));
             $rxb  = to_bytes(pick($f, K_CL_RXB));
@@ -152,9 +183,10 @@ SQL);
             // Ereignis bestimmen
             $since = $p['assoc_since'] ?? $now;
             if (!$p || !$p['connected']) {
-                $log->execute([$now, 'connect', $mac, $apMac, null, $ip, $host, $ssid]); $since = $now;
+                if (!$baseline) $log->execute([$now, 'connect', $mac, $apMac, null, $ip, $host, $ssid, $os]);
+                $since = $now;
             } elseif ($p['ap_mac'] !== $apMac) {
-                $log->execute([$now, 'roam', $mac, $apMac, $p['ap_mac'], $ip, $host, $ssid]); $since = $now;
+                $log->execute([$now, 'roam', $mac, $apMac, $p['ap_mac'], $ip, $host, $ssid, $os]); $since = $now;
             }
             $onl = pick($f, K_CL_ONL);
             if (is_numeric($onl) && (int)$onl > 0 && (int)$onl < 86400 * 365) $since = min($since, $now - (int)$onl);
@@ -166,8 +198,8 @@ SQL);
                 ':txb' => $txb, ':rxb' => $rxb, ':txr' => $txr, ':rxr' => $rxr,
                 ':ltx' => pick($f, K_CL_TXR), ':lrx' => pick($f, K_CL_RXR),
                 ':since' => $since, ':ls' => $now, ':fs' => $p['first_seen'] ?? $now,
-                ':raw' => json_encode($c, JSON_UNESCAPED_UNICODE),
-                ':os' => pick($f, K_CL_OS),
+                ':raw' => $privacy ? null : json_encode($c, JSON_UNESCAPED_UNICODE),
+                ':os' => $os,
             ]);
         }
 
@@ -184,7 +216,7 @@ SQL);
     // Clients, die nicht mehr gesehen werden -> disconnect
     foreach ($prev as $mac => $p) {
         if ($p['connected'] && !isset($seenClients[$mac])) {
-            $log->execute([$now, 'disconnect', $mac, $p['ap_mac'], null, $p['ip'], $p['hostname'], $p['ssid']]);
+            $log->execute([$now, 'disconnect', $mac, $p['ap_mac'], null, $p['ip'], $p['hostname'], $p['ssid'], $p['ostype'] ?? null]);
             $db->prepare('UPDATE clients SET connected=0, tx_rate=NULL, rx_rate=NULL WHERE mac=?')->execute([$mac]);
         }
     }
@@ -194,6 +226,7 @@ SQL);
         $db->prepare("UPDATE aps SET online=0, client_count=0 WHERE mac NOT IN ($in)")->execute($seenAps);
     }
     $db->commit();
+    if ($rotated) $pseudo->forgetOld();   // alter Schlüssel wird nicht mehr gebraucht
 
     meta_set('pvc_ip', $api->pvcIp());
     logmsg(sprintf('OK – %d APs, %d Clients (PVC %s)', count($seenAps), count($seenClients), $api->pvcIp()));

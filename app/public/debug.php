@@ -20,7 +20,7 @@ if (isset($_GET['m']) && in_array($_GET['m'], $allowed, true)) {
     $params = [];
     if (!empty($_GET['apmac'])) $params['apmac'] = $_GET['apmac'];
     if (!empty($_GET['essid'])) $params['essid'] = $_GET['essid'];
-    try { $a = api(); $live = $a->call($_GET['m'], $params); $a->logout(); }
+    try { $a = api(); $live = $a->call($_GET['m'], $params); $a->logout(); if (privacy_on() && $_GET['m'] === 'ap.getClient') $live = scrub_pii($live); }
     catch (Throwable $e) { $live = ['FEHLER' => $e->getMessage()]; }
 }
 

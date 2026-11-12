@@ -23,6 +23,8 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
     $pdo->exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
+    // Datenschutzmodus: gelöschte Datensätze physisch überschreiben statt nur freigeben
+    if (cfg('PRIVACY_MODE', '1') !== '0') $pdo->exec('PRAGMA secure_delete=ON;');
     $pdo->exec(<<<SQL
 CREATE TABLE IF NOT EXISTS aps (
     mac TEXT PRIMARY KEY,
@@ -58,6 +60,8 @@ SQL);
     // Migration ältere Datenbanken
     $cols = array_column($pdo->query('PRAGMA table_info(clients)')->fetchAll(), 'name');
     if (!in_array('ostype', $cols, true)) $pdo->exec('ALTER TABLE clients ADD COLUMN ostype TEXT');
+    $cols = array_column($pdo->query('PRAGMA table_info(assoc_log)')->fetchAll(), 'name');
+    if (!in_array('ostype', $cols, true)) $pdo->exec('ALTER TABLE assoc_log ADD COLUMN ostype TEXT');
     return $pdo;
 }
 
@@ -323,6 +327,74 @@ function to_bytes($v): ?int {
         return (int)round((float)$m[1] * $mul);
     }
     return null;
+}
+
+/* --------------------------------------------------------- Datenschutz
+ * PRIVACY_MODE=1 (Standard): keine MAC-Adressen, keine Gerätenamen, keine Roh-
+ * daten der Clients in Datenbank oder Dateien. Clients werden über ein Pseudonym
+ * geführt: HMAC-SHA256(MAC) mit einem Schlüssel, der NUR im Arbeitsspeicher des
+ * Pollers liegt und täglich neu erzeugt wird. Ein einfacher Hash der MAC wäre
+ * per Durchprobieren umkehrbar, mit dem flüchtigen Schlüssel ist er es nicht.
+ */
+
+function privacy_on(): bool { return cfg('PRIVACY_MODE', '1') !== '0'; }
+
+final class Pseudonymizer {
+    private ?string $key = null;
+    private ?string $oldKey = null;
+    private ?string $day = null;
+    public bool $fresh = false;      // erster Schlüssel seit Start: alte Pseudonyme sind nicht zuordenbar
+
+    /** Neuen Tagesschlüssel erzeugen, falls nötig. true = Schlüssel gewechselt. */
+    public function rotate(): bool {
+        $d = date('Y-m-d');
+        if ($this->day === $d) { $this->fresh = false; return false; }
+        $this->fresh = $this->key === null;
+        $this->oldKey = $this->key;
+        $this->key = random_bytes(32);
+        $this->day = $d;
+        return true;
+    }
+    public function id(string $mac): string { return substr(hash_hmac('sha256', $mac, (string)$this->key), 0, 16); }
+    public function oldId(string $mac): ?string { return $this->oldKey === null ? null : substr(hash_hmac('sha256', $mac, $this->oldKey), 0, 16); }
+    public function forgetOld(): void { $this->oldKey = null; }
+}
+
+/** IP kürzen: PRIVACY_IP = mask (Standard, 192.168.20.x) | full | off */
+function privacy_ip(?string $ip): ?string {
+    if ($ip === null || !privacy_on()) return $ip;
+    $mode = strtolower((string)cfg('PRIVACY_IP', 'mask'));
+    if ($mode === 'full') return $ip;
+    if ($mode === 'off') return null;
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return preg_replace('/\.\d+$/', '.x', $ip);
+    $b = @inet_pton($ip);
+    return $b === false ? null : implode(':', str_split(bin2hex(substr($b, 0, 8)), 4)) . '::x';
+}
+
+/** Personenbezogene Werte in Client-Rohdaten ersetzen (Feldnamen bleiben für die Diagnose sichtbar). */
+const PII_KEYS = ['mac', 'vap', 'ip', 'hostname', 'portalusername', 'username', 'devmodel', 'clientmac', 'stamac',
+                  'usermac', 'clientip', 'staip', 'clientname', 'devicename', 'staname', 'ipv6', 'ipv4'];
+function scrub_pii($v) {
+    if (!is_array($v)) return $v;
+    foreach ($v as $k => $x) {
+        if (is_array($x)) $v[$k] = scrub_pii($x);
+        elseif (is_string($k) && in_array(norm_key($k), PII_KEYS, true) && $x !== '' && $x !== null) $v[$k] = '***';
+    }
+    return $v;
+}
+
+/** Anzeigename eines Clients: Hostname, sonst Gerätetyp, sonst Kurz-ID. */
+function dev_label(?string $host, ?string $os, ?string $mac, ?string $ip = null): string {
+    if ($host) return $host;
+    if ($os) return $os . '-Gerät';
+    if ($mac && !str_contains($mac, ':')) return 'Gerät ' . substr($mac, 0, 6);
+    return $ip ?: (string)$mac;
+}
+
+/** Client-Kennung zur Anzeige: MAC oder (im Datenschutzmodus) kurzes Pseudonym. */
+function client_ref(?string $mac): string {
+    if (!$mac) return '';
+    return str_contains($mac, ':') ? $mac : 'ID ' . substr($mac, 0, 8);
 }
 
 /* -------------------------------------------------------------- Format */

@@ -28,17 +28,14 @@ foreach ($db->query("SELECT l.* FROM assoc_log l JOIN (SELECT ap_mac, MAX(id) mi
 // Clients, die gerade verbunden sind, zählen ebenfalls als „zuletzt assoziiert“
 foreach ($clients as $c) {
     $cur = $lastAssoc[$c['ap_mac']] ?? null;
-    if (!$cur || $cur['ts'] < $c['assoc_since']) $lastAssoc[$c['ap_mac']] = ['ts' => $c['assoc_since'], 'ip' => $c['ip'], 'hostname' => $c['hostname'], 'client_mac' => $c['mac']];
+    if (!$cur || $cur['ts'] < $c['assoc_since']) $lastAssoc[$c['ap_mac']] = ['ts' => $c['assoc_since'], 'ip' => $c['ip'], 'hostname' => $c['hostname'], 'client_mac' => $c['mac'], 'ostype' => $c['ostype'] ?? null];
 }
 
 $onlineCnt = count(array_filter($aps, fn($a) => $a['online']));
 $totTx = array_sum(array_map(fn($c) => (float)$c['tx_rate'], $clients));
 $totRx = array_sum(array_map(fn($c) => (float)$c['rx_rate'], $clients));
 
-function client_label(array $c): string {
-    if ($c['hostname']) return $c['hostname'];
-    return ($c['ostype'] ?? null) ? $c['ostype'] . '-Gerät' : ($c['ip'] ?: $c['mac']);
-}
+function client_label(array $c): string { return dev_label($c['hostname'], $c['ostype'] ?? null, $c['mac'], $c['ip']); }
 /** Signal: negative Werte = dBm (RSSI), positive Werte = Abstand zum Rauschen in dB (wie von ap.getClient geliefert). */
 function rssi_class($r): string {
     if ($r === null) return '';
@@ -95,7 +92,7 @@ ob_start(); ?>
         <span class="c-ip"><span class="mono"><?= h($ap['ip'] ?: '–') ?></span><span class="small muted"><?= h($ap['model'] ?: '') ?></span></span>
         <span class="c-cnt"><span class="badge"><?= count($cl) ?></span></span>
         <span class="c-rate" data-l="Durchsatz"><?= $cl ? fmt_rate($apTx ?: null) . ' / ' . fmt_rate($apRx ?: null) : '–' ?></span>
-        <span class="c-last" data-l="Letzte Anmeldung"><?php if ($la): ?><?= fmt_ago((int)$la['ts']) ?> · <?= h($la['hostname'] ?: $la['client_mac']) ?><?= $la['ip'] ? ' <span class="mono small">' . h($la['ip']) . '</span>' : '' ?><?php else: ?>–<?php endif; ?></span>
+        <span class="c-last" data-l="Letzte Anmeldung"><?php if ($la): ?><?= fmt_ago((int)$la['ts']) ?> · <?= h(dev_label($la['hostname'] ?? null, $la['ostype'] ?? null, $la['client_mac'] ?? null)) ?><?= $la['ip'] ? ' <span class="mono small">' . h($la['ip']) . '</span>' : '' ?><?php else: ?>–<?php endif; ?></span>
       </summary>
       <div class="apdetail">
         <div class="small muted">MAC <span class="mono"><?= h($ap['mac']) ?></span><?= $ap['version'] ? ' · Firmware <span class="mono">' . h($ap['version']) . '</span>' : '' ?><?= $ap['uptime'] ? ' · Laufzeit ' . h(is_numeric($ap['uptime']) ? fmt_dur((int)$ap['uptime']) : $ap['uptime']) : '' ?><?= $ap['role'] ? ' · Rolle ' . h($ap['role']) : '' ?> · <a href="?v=log&ap=<?= urlencode($ap['mac']) ?>">Verlauf</a></div>
@@ -125,7 +122,7 @@ ob_start(); ?>
     <div class="thead"><span>Client</span><span>IP</span><span>Access Point</span><span>Signal</span><span>Durchsatz ↓ / ↑</span><span>Datenmenge ↓ / ↑</span><span>Verbunden seit</span></div>
     <?php foreach ($clients as $c): ?>
     <div class="row">
-      <span data-l="Client"><b><?= h(client_label($c)) ?></b><br><span class="mono small muted"><?= h($c['mac']) ?></span></span>
+      <span data-l="Client"><b><?= h(client_label($c)) ?></b><br><span class="mono small muted"><?= h(client_ref($c['mac'])) ?></span></span>
       <span data-l="IP" class="mono"><?= h($c['ip'] ?: '—') ?></span>
       <span data-l="AP"><?= h($apName[$c['ap_mac']] ?? $c['ap_mac']) ?><?= $c['ssid'] ? '<br><span class="small muted">' . h($c['ssid']) . ($c['band'] ? ' · ' . h($c['band']) : '') . '</span>' : '' ?></span>
       <span data-l="Signal"><?= rssi_tag($c['rssi']) ?></span>
@@ -155,7 +152,7 @@ ob_start(); ?>
     <li class="ev <?= h($e['event']) ?>">
       <time><?= date('d.m.Y H:i', (int)$e['ts']) ?></time>
       <div>
-        <b><?= h($e['hostname'] ?: $e['client_mac']) ?></b>
+        <b><?= h(dev_label($e['hostname'], $e['ostype'] ?? null, $e['client_mac'])) ?></b>
         <?= $e['ip'] ? '<span class="mono small">' . h($e['ip']) . '</span>' : '' ?>
         <span class="evt"><?= $lbl ?></span>
         <?php if ($e['event'] === 'roam'): ?><?= h($apName[$e['prev_ap_mac']] ?? $e['prev_ap_mac']) ?> → <?php endif; ?>
@@ -167,7 +164,8 @@ ob_start(); ?>
   </ol>
 <?php endif; ?>
 
-<p class="foot">Stand: <?= $lastPoll ? date('d.m.Y H:i:s', $lastPoll) : '–' ?> · aktualisiert sich automatisch<?= ($pvc = meta_get('pvc_ip')) ? ' · PVC ' . h($pvc) : '' ?></p>
+<p class="foot">Stand: <?= $lastPoll ? date('d.m.Y H:i:s', $lastPoll) : '–' ?> · aktualisiert sich automatisch<?= ($pvc = meta_get('pvc_ip')) ? ' · PVC ' . h($pvc) : '' ?>
+<?php if (privacy_on()): ?><br><span title="Keine MAC-Adressen, keine Gerätenamen. Geräte werden mit einem täglich wechselnden Pseudonym geführt, IP-Adressen gekürzt.">🔒 Datenschutzmodus: keine MAC-Adressen und Gerätenamen gespeichert · Verlauf <?= (int)cfg('RETENTION_DAYS', 7) ?> Tage</span><?php endif; ?></p>
 <?php
 $main = ob_get_clean();
 if ($partial) { header('Content-Type: text/html; charset=utf-8'); echo $main; exit; }
