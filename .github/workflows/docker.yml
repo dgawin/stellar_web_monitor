@@ -1,5 +1,5 @@
 # Baut das Docker-Image bei jedem Push auf main (und bei Tags v*) und legt es in der
-# GitHub Container Registry ab: ghcr.io/<owner>/stellar_web_monitor
+# GitHub Container Registry ab: ghcr.io/dgawin/stellar_web_monitor
 name: Docker image
 
 on:

@@ -39,7 +39,7 @@ Verwendete API-Methoden: `system.getPvc`, `user.logIn`, `system.getApList`, `ap.
 ## Schnellstart (docker compose)
 
 ```bash
-git clone https://github.com/<user>/stellar_web_monitor.git
+git clone https://github.com/dgawin/stellar_web_monitor.git
 cd stellar_web_monitor
 cp .env.example .env          # CLUSTER_IP und CLUSTER_PASSWORD eintragen
 docker compose up -d --build
@@ -50,14 +50,14 @@ Die Webseite läuft dann unter `http://<docker-host>:8088`.
 
 ### Portainer (Image direkt von GitHub)
 
-Bei jedem Push auf `main` baut eine GitHub Action das Image (amd64 + arm64) und legt es in der GitHub Container Registry ab: `ghcr.io/<github-user>/stellar_web_monitor:latest`. Selbst bauen ist damit nicht nötig.
+Bei jedem Push auf `main` baut eine GitHub Action das Image (amd64 + arm64) und legt es in der GitHub Container Registry ab: `ghcr.io/dgawin/stellar_web_monitor:latest`. Selbst bauen ist damit nicht nötig.
 
 1. Einmalig auf GitHub: unter *Packages → stellar_web_monitor → Package settings* die Sichtbarkeit auf **Public** stellen. Alternativ in Portainer unter *Registries* GHCR mit einem Token (`read:packages`) hinterlegen.
 2. In Portainer *Stacks → Add stack → Repository*:
-   - Repository URL: `https://github.com/<github-user>/stellar_web_monitor`
+   - Repository URL: `https://github.com/dgawin/stellar_web_monitor`
    - Reference: `refs/heads/main`
    - Compose path: `portainer-stack.yml`
-3. Unter *Environment variables* mindestens `IMAGE`, `CLUSTER_IP` und `CLUSTER_PASSWORD` setzen (Vorlage: `.env.example`), dann *Deploy the stack*.
+3. Unter *Environment variables* mindestens `CLUSTER_IP` und `CLUSTER_PASSWORD` setzen, Vorlage: `.env.example`. `IMAGE` ist mit `ghcr.io/dgawin/stellar_web_monitor:latest` vorbelegt. Dann *Deploy the stack*.
 
 **Update:** Im Stack *Pull and redeploy* bzw. *Update the stack* mit „Re-pull image“. Mit *GitOps updates* und aktiviertem Re-pull aktualisiert Portainer automatisch. Für feste Stände ein Tag wie `v1.0.0` pushen und `IMAGE=…:1.0.0` setzen.
 

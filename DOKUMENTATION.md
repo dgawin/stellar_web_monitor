@@ -47,7 +47,7 @@ Die Anwendung **liest nur**. Sie verwendet ausschließlich lesende API-Methoden 
 
 | Container | Image | Aufgabe |
 |---|---|---|
-| `web` | `ghcr.io/<owner>/stellar_web_monitor` | Apache + PHP 8.3 und Auslieferung der Webseite |
+| `web` | `ghcr.io/dgawin/stellar_web_monitor` | Apache + PHP 8.3 und Auslieferung der Webseite |
 | `poller` | dasselbe Image | Endlosschleife `php /app/poller.php`, läuft als `www-data` |
 
 Beide Container nutzen **dasselbe Image** und **dasselbe Volume**. SQLite läuft im WAL-Modus mit `busy_timeout=5000`. Dadurch kann die Webseite lesen, während der Poller schreibt.
@@ -341,7 +341,7 @@ Jede Live-Abfrage meldet sich neu am Cluster an. Bei einem gesperrten Account so
 | `CLUSTER_PASSWORD` | – | Passwort, Klartext oder MD5 (**Pflicht**) |
 | `CLUSTER_PASSWORD_HASH` | `auto` | `auto` / `md5` / `plain` |
 | `RESOLVE_PVC` | `1` | PVC per `system.getPvc` ermitteln |
-| `IMAGE` | – | nur Portainer-Stack: z. B. `ghcr.io/<owner>/stellar_web_monitor:latest` |
+| `IMAGE` | – | nur Portainer-Stack: z. B. `ghcr.io/dgawin/stellar_web_monitor:latest` |
 | `POLL_INTERVAL` | `60` | Sekunden zwischen zwei Durchläufen (min. 15) |
 | `SYSINFO_EVERY` | `10` | `ap.getSystemInfo` nur jeden n-ten Durchlauf |
 | `RETENTION_DAYS` | `90` | Aufbewahrung des Verlaufs |
@@ -360,14 +360,14 @@ Jede Live-Abfrage meldet sich neu am Cluster an. Bei einem gesperrten Account so
 
 ### 11.1 Portainer mit Image aus GitHub
 
-Die GitHub Action `.github/workflows/docker.yml` baut bei jedem Push auf `main` (und bei Tags `v*`) ein Image für amd64 und arm64 und legt es unter `ghcr.io/<owner>/stellar_web_monitor` ab (Tags `latest`, Versionsnummer, Commit-SHA).
+Die GitHub Action `.github/workflows/docker.yml` baut bei jedem Push auf `main` (und bei Tags `v*`) ein Image für amd64 und arm64 und legt es unter `ghcr.io/dgawin/stellar_web_monitor` ab (Tags `latest`, Versionsnummer, Commit-SHA).
 
 1. **Einmalig:** Paket auf GitHub auf *Public* stellen, oder in Portainer unter *Registries* GHCR mit Token (`read:packages`) hinterlegen.
 2. **Stack anlegen:** *Stacks → Add stack → Repository*, URL des Repos, Reference `refs/heads/main`, Compose path `portainer-stack.yml`. Alternativ den Inhalt von `portainer-stack.yml` im Web editor einfügen.
 3. **Variablen** unter *Environment variables*, zum Beispiel:
 
 ```
-IMAGE=ghcr.io/<owner>/stellar_web_monitor:latest
+IMAGE=ghcr.io/dgawin/stellar_web_monitor:latest
 CLUSTER_IP=192.168.1.10
 CLUSTER_PASSWORD=********
 SITE_TITLE=WLAN-Übersicht

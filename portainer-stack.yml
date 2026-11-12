@@ -1,9 +1,9 @@
 # Portainer: Stacks -> Add stack -> "Repository" (dieses GitHub-Repo, Compose path: portainer-stack.yml)
 # oder "Web editor" (Inhalt einfügen). Variablen unter "Environment variables" setzen (siehe .env.example).
-# IMAGE zeigt auf das von GitHub Actions gebaute Image, z. B. ghcr.io/<github-user>/stellar_web_monitor:latest
+# IMAGE zeigt auf das von GitHub Actions gebaute Image, z. B. ghcr.io/dgawin/stellar_web_monitor:latest
 services:
   web:
-    image: ${IMAGE}
+    image: ${IMAGE:-ghcr.io/dgawin/stellar_web_monitor:latest}
     restart: unless-stopped
     ports: ["${WEB_PORT:-8088}:80"]
     environment: &env
@@ -26,7 +26,7 @@ services:
       TZ: ${TZ:-Europe/Berlin}
     volumes: ["stellar_data:/data"]
   poller:
-    image: ${IMAGE}
+    image: ${IMAGE:-ghcr.io/dgawin/stellar_web_monitor:latest}
     restart: unless-stopped
     command: ["php", "/app/poller.php"]
     user: www-data
