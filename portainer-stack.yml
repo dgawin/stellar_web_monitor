@@ -1,0 +1,37 @@
+# Portainer: Stacks -> Add stack -> "Repository" (dieses GitHub-Repo, Compose path: portainer-stack.yml)
+# oder "Web editor" (Inhalt einfügen). Variablen unter "Environment variables" setzen (siehe .env.example).
+# IMAGE zeigt auf das von GitHub Actions gebaute Image, z. B. ghcr.io/<github-user>/stellar_web_monitor:latest
+services:
+  web:
+    image: ${IMAGE}
+    restart: unless-stopped
+    ports: ["${WEB_PORT:-8088}:80"]
+    environment: &env
+      CLUSTER_IP: ${CLUSTER_IP}
+      CLUSTER_PORT: ${CLUSTER_PORT:-8080}
+      CLUSTER_HTTPS: ${CLUSTER_HTTPS:-0}
+      CLUSTER_USER: ${CLUSTER_USER:-Administrator}
+      CLUSTER_PASSWORD: ${CLUSTER_PASSWORD}
+      CLUSTER_PASSWORD_HASH: ${CLUSTER_PASSWORD_HASH:-auto}
+      RESOLVE_PVC: ${RESOLVE_PVC:-1}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      SYSINFO_EVERY: ${SYSINFO_EVERY:-10}
+      RETENTION_DAYS: ${RETENTION_DAYS:-90}
+      LOGIN_BACKOFF_MAX: ${LOGIN_BACKOFF_MAX:-30}
+      SITE_TITLE: ${SITE_TITLE:-WLAN-Übersicht}
+      REFRESH_SECONDS: ${REFRESH_SECONDS:-30}
+      WEB_USER: ${WEB_USER:-}
+      WEB_PASSWORD: ${WEB_PASSWORD:-}
+      DEBUG_PASSWORD: ${DEBUG_PASSWORD:-}
+      TZ: ${TZ:-Europe/Berlin}
+    volumes: ["stellar_data:/data"]
+  poller:
+    image: ${IMAGE}
+    restart: unless-stopped
+    command: ["php", "/app/poller.php"]
+    user: www-data
+    environment: *env
+    volumes: ["stellar_data:/data"]
+    depends_on: [web]
+volumes:
+  stellar_data:

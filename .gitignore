@@ -1,0 +1,11 @@
+# Laufzeitdaten und Zugangsdaten – niemals committen
+.env
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+raw/
+dist/
+# Herstellerunterlagen (urheberrechtlich geschützt, nicht weitergeben)
+*.pdf
+*.postman_collection.json

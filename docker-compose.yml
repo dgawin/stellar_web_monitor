@@ -1,0 +1,17 @@
+# docker compose up -d --build   (Werte in .env eintragen, Vorlage: .env.example)
+services:
+  web:
+    build: .
+    image: stellar-monitor:latest
+    restart: unless-stopped
+    ports: ["${WEB_PORT:-8088}:80"]
+    env_file: .env
+    volumes: ["./data:/data"]
+  poller:
+    image: stellar-monitor:latest
+    restart: unless-stopped
+    command: ["php", "/app/poller.php"]
+    user: www-data
+    env_file: .env
+    volumes: ["./data:/data"]
+    depends_on: [web]
