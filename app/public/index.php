@@ -72,7 +72,7 @@ ob_start(); ?>
 
 <?php if ($view === 'aps'): ?>
   <div class="toolbar">
-    <input type="search" class="filter" placeholder="AP filtern nach Name, IP, Modell …" data-filter=".aprow">
+    <input type="search" class="filter" placeholder="AP filtern nach Name, Standort, IP, Modell …" data-filter=".aprow">
     <label class="chk"><input type="checkbox" id="onlyOff"> nur offline</label>
   </div>
   <?php if (!$aps): ?><p class="empty">Noch keine Daten vom Cluster. Der erste Abruf läuft gleich.</p><?php endif; ?>
@@ -87,7 +87,7 @@ ob_start(); ?>
     <details class="aprow <?= $ap['online'] ? 'on' : 'off' ?>" data-mac="<?= h($ap['mac']) ?>">
       <summary>
         <span class="dot" title="<?= $ap['online'] ? 'online' : 'offline' ?>"></span>
-        <span class="c-name"><b><?= h($ap['name'] ?: $ap['mac']) ?></b><?= $isPvc ? ' <span class="tag">PVC</span>' : '' ?>
+        <span class="c-name"><b><?= h($ap['name'] ?: $ap['mac']) ?></b><?= ($ap['location'] ?? '') !== '' ? '<span class="small muted loc">📍 ' . h($ap['location']) . '</span>' : '' ?><?= $isPvc ? ' <span class="tag">PVC</span>' : '' ?>
           <?php if (!$ap['online']): ?><span class="small offtxt"><?= $ap['last_seen'] ? 'offline seit ' . fmt_ago((int)$ap['last_seen']) : 'offline (Status ' . h(ap_state_label(json_decode((string)$ap['raw'], true)['status'] ?? null) ?? 'unbekannt') . ')' ?></span><?php endif; ?></span>
         <span class="c-ip"><span class="mono"><?= h($ap['ip'] ?: '–') ?></span><span class="small muted"><?= h($ap['model'] ?: '') ?></span></span>
         <span class="c-cnt"><span class="badge"><?= count($cl) ?></span></span>
@@ -95,7 +95,7 @@ ob_start(); ?>
         <span class="c-last" data-l="Letzte Anmeldung"><?php if ($la): ?><?= fmt_ago((int)$la['ts']) ?> · <?= h(dev_label($la['hostname'] ?? null, $la['ostype'] ?? null, $la['client_mac'] ?? null)) ?><?= $la['ip'] ? ' <span class="mono small">' . h($la['ip']) . '</span>' : '' ?><?php else: ?>–<?php endif; ?></span>
       </summary>
       <div class="apdetail">
-        <div class="small muted">MAC <span class="mono"><?= h($ap['mac']) ?></span><?= $ap['version'] ? ' · Firmware <span class="mono">' . h($ap['version']) . '</span>' : '' ?><?= $ap['uptime'] ? ' · Laufzeit ' . h(is_numeric($ap['uptime']) ? fmt_dur((int)$ap['uptime']) : $ap['uptime']) : '' ?><?= $ap['role'] ? ' · Rolle ' . h($ap['role']) : '' ?> · <a href="?v=log&ap=<?= urlencode($ap['mac']) ?>">Verlauf</a></div>
+        <div class="small muted">MAC <span class="mono"><?= h($ap['mac']) ?></span><?= ($ap['location'] ?? '') !== '' ? ' · Standort ' . h($ap['location']) : '' ?><?= $ap['version'] ? ' · Firmware <span class="mono">' . h($ap['version']) . '</span>' : '' ?><?= $ap['uptime'] ? ' · Laufzeit ' . h(is_numeric($ap['uptime']) ? fmt_dur((int)$ap['uptime']) : $ap['uptime']) : '' ?><?= $ap['role'] ? ' · Rolle ' . h($ap['role']) : '' ?> · <a href="?v=log&ap=<?= urlencode($ap['mac']) ?>">Verlauf</a></div>
         <?php if ($cl): ?>
         <ul class="clients">
         <?php foreach ($cl as $c): ?>
@@ -176,7 +176,7 @@ if ($partial) { header('Content-Type: text/html; charset=utf-8'); echo $main; ex
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#2f5d3a">
 <title><?= h($title) ?></title>
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%232f5d3a' d='M12 20a2 2 0 100-4 2 2 0 000 4zm-4.2-5.6l1.4 1.4a4 4 0 015.6 0l1.4-1.4a6 6 0 00-8.4 0zM5 11.6l1.4 1.4a8 8 0 0111.2 0l1.4-1.4a10 10 0 00-14 0zM2.2 8.8l1.4 1.4a12 12 0 0116.8 0l1.4-1.4a14 14 0 00-19.6 0z'/></svg>">
 </head>
 <body>

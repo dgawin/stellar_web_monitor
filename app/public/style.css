@@ -117,6 +117,7 @@ pre.raw { background: var(--bg); padding: 10px; border-radius: 8px; overflow: au
 .aprow.off > summary { background: color-mix(in srgb, var(--bad) 6%, transparent); }
 .c-name, .c-ip { display: flex; flex-direction: column; min-width: 0; }
 .c-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-name .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-name .tag { align-self: flex-start; margin-top: 2px; }
 .offtxt { color: var(--bad); }
 .c-cnt { text-align: center; }

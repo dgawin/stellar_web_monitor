@@ -86,12 +86,12 @@ function poll(StellarApi $api, bool $withSysInfo, string $rawDir, Pseudonymizer 
 
     $seenAps = [];
     $apUp = $db->prepare(<<<SQL
-INSERT INTO aps(mac,name,ip,model,version,role,online,uptime,client_count,last_seen,first_seen,raw)
-VALUES(:mac,:name,:ip,:model,:version,:role,:online,:uptime,:cc,:ls,:fs,:raw)
+INSERT INTO aps(mac,name,ip,model,version,role,online,uptime,client_count,last_seen,first_seen,raw,location)
+VALUES(:mac,:name,:ip,:model,:version,:role,:online,:uptime,:cc,:ls,:fs,:raw,:loc)
 ON CONFLICT(mac) DO UPDATE SET
   name=COALESCE(excluded.name,name), ip=COALESCE(excluded.ip,ip), model=COALESCE(excluded.model,model),
   version=COALESCE(excluded.version,version), role=COALESCE(excluded.role,role), online=excluded.online,
-  uptime=COALESCE(excluded.uptime,uptime), client_count=excluded.client_count,
+  uptime=COALESCE(excluded.uptime,uptime), client_count=excluded.client_count, location=COALESCE(excluded.location,location),
   last_seen=CASE WHEN excluded.online=1 THEN excluded.last_seen ELSE last_seen END, raw=excluded.raw
 SQL);
 
@@ -103,14 +103,15 @@ SQL);
         $mac = norm_mac($macRaw);
         $online = is_online(pick($f, K_AP_STATE));
 
+        $hasSi = false;
         if ($withSysInfo && $online) {
             try {
                 $si = $api->call('ap.getSystemInfo', ['apmac' => $macRaw]);
                 dump_raw($rawDir, "ap.getSystemInfo_$mac", $si);
-                if (is_array($si)) $f = $f + flat($si);   // Werte aus der Liste haben Vorrang
+                if (is_array($si)) { $f = $f + flat($si); $hasSi = true; }   // Werte aus der Liste haben Vorrang
             } catch (Throwable $e) { logmsg("getSystemInfo $mac: " . $e->getMessage()); }
         }
-        $apsToQuery[$mac] = ['raw_mac' => $macRaw, 'online' => $online, 'f' => $f, 'ap' => $ap];
+        $apsToQuery[$mac] = ['raw_mac' => $macRaw, 'online' => $online, 'f' => $f, 'ap' => $ap, 'si' => $hasSi];
         $seenAps[] = $mac;
     }
 
@@ -208,6 +209,8 @@ SQL);
             ':mac' => $apMac, ':name' => pick($f, K_AP_NAME), ':ip' => pick($f, K_AP_IP),
             ':model' => pick($f, K_AP_MODEL), ':version' => pick($f, K_AP_VER), ':role' => ap_role_label(pick($f, K_AP_ROLE)),
             ':online' => $info['online'] ? 1 : 0, ':uptime' => pick($f, K_AP_UP),
+            // Location nur aus ap.getSystemInfo; leerer Wert dort = Location wurde entfernt
+            ':loc' => $info['si'] ? trim((string)pick($f, K_AP_LOC, '')) : null,
             ':cc' => $info['online'] ? max(count($clients), (int)pick($f, K_AP_CCNT, 0)) : 0,
             ':ls' => $info['online'] ? $now : null, ':fs' => $now, ':raw' => json_encode($info['ap'], JSON_UNESCAPED_UNICODE),
         ]);

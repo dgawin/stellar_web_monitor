@@ -62,6 +62,8 @@ SQL);
     if (!in_array('ostype', $cols, true)) $pdo->exec('ALTER TABLE clients ADD COLUMN ostype TEXT');
     $cols = array_column($pdo->query('PRAGMA table_info(assoc_log)')->fetchAll(), 'name');
     if (!in_array('ostype', $cols, true)) $pdo->exec('ALTER TABLE assoc_log ADD COLUMN ostype TEXT');
+    $cols = array_column($pdo->query('PRAGMA table_info(aps)')->fetchAll(), 'name');
+    if (!in_array('location', $cols, true)) $pdo->exec('ALTER TABLE aps ADD COLUMN location TEXT');
     return $pdo;
 }
 
@@ -274,6 +276,7 @@ const K_AP_MODEL = ['model', 'apmodel', 'productname', 'devicemodel', 'type', 'h
 const K_AP_VER   = ['version', 'swversion', 'firmware', 'fwversion', 'softwareversion', 'imageversion'];
 const K_AP_ROLE  = ['role', 'aprole', 'pvcrole', 'groupRole'];
 const K_AP_STATE = ['status', 'state', 'online', 'apstatus', 'onlinestatus', 'connstate', 'runstate'];
+const K_AP_LOC   = ['location', 'aplocation', 'sysLocation'];
 const K_AP_UP    = ['uptime', 'runtime', 'systemuptime', 'onlinetime'];
 const K_AP_CCNT  = ['clientnum', 'clientcount', 'clients', 'stanum', 'usernum', 'numclients'];
 

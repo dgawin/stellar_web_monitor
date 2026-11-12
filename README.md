@@ -12,7 +12,7 @@ Passive, mobil nutzbare WLAN-Übersicht für **Alcatel-Lucent OmniAccess Stellar
 
 ## Funktionen
 
-- **Access Points** als kompakte Liste: Status, IP, Modell, Rolle (PVC/SVC/VC), Anzahl Clients, Durchsatz
+- **Access Points** als kompakte Liste: Status, Standort (Location), IP, Modell, Rolle (PVC/SVC/VC), Anzahl Clients, Durchsatz
 - **Letzte erfolgreiche Anmeldung je AP** mit Gerätetyp und IP
 - **Clients je AP** zum Aufklappen: Gerätetyp, IP, SSID, Band, Signal, **übertragene Datenmenge** und Durchsatz
 - **Client-Übersicht** über alle APs, auf dem Handy als Karten
